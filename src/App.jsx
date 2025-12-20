@@ -5,6 +5,8 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import DashboardPage from "./pages/DashboardPage";
 import ProjectsPage from "./pages/ProjectsPage";
+import ProjectDetailPage from "./pages/ProjectDetailPage";
+import DatabasesPage from "./pages/DatabasesPage";
 import MainLayout from "./layouts/MainLayout";
 import { UserProvider } from "./contexts/UserContext";
 import { ToastProvider } from "./contexts/ToastContext";
@@ -26,6 +28,8 @@ function ProtectedRoutes() {
       >
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/projects" element={<ProjectsPage />} />
+        <Route path="/projects/:id" element={<ProjectDetailPage />} />
+        <Route path="/databases" element={<DatabasesPage />} />
       </Route>
 
       <Route path="/" element={<Navigate to="/login" />} />

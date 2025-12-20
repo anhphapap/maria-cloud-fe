@@ -10,6 +10,10 @@ export const endpoints = {
   getProjects: "/projects",
   createProject: "/projects",
   deleteProject: (id) => `/projects/${id}`,
+  getDatabases: "/dbs",
+  createDatabase: "/dbs",
+  getDatabasesByProjectId: (projectId) => `/projects/${projectId}/dbs`,
+  deleteDatabase: (id) => `/dbs/${id}`,
 };
 
 export const authApis = () =>

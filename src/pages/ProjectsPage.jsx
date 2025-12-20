@@ -2,16 +2,21 @@ import { Loader2, Plus, Trash } from "lucide-react";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import Modal from "../components/ui/Modal";
+import ConfirmModal from "../components/ui/ConfirmModal";
 import { authApis, endpoints } from "../config/api.config";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useToast } from "../contexts/ToastContext";
 
 export default function ProjectsPage() {
+  const navigate = useNavigate();
   const [projects, setProjects] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [selectedProject, setSelectedProject] = useState(null);
   const [projectName, setProjectName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [deletingProjectId, setDeletingProjectId] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const { addToast } = useToast();
 
   const fetchProjects = async () => {
@@ -58,18 +63,26 @@ export default function ProjectsPage() {
     }
   };
 
-  const handleDeleteProject = async (id) => {
+  const handleDeleteProject = async () => {
+    if (!selectedProject) return;
+
     try {
-      setDeletingProjectId(id);
-      await authApis().delete(endpoints.deleteProject(id));
+      setDeleteLoading(true);
+      await authApis().delete(endpoints.deleteProject(selectedProject.id));
       addToast("Xóa dự án thành công!", "success");
+      setIsConfirmModalOpen(false);
+      setSelectedProject(null);
       fetchProjects();
     } catch (error) {
-      console.log(error);
       addToast(error.response?.data?.message || "Đã có lỗi xảy ra", "error");
     } finally {
-      setDeletingProjectId(null);
+      setDeleteLoading(false);
     }
+  };
+
+  const openDeleteConfirm = (project) => {
+    setSelectedProject(project);
+    setIsConfirmModalOpen(true);
   };
 
   useEffect(() => {
@@ -155,6 +168,22 @@ export default function ProjectsPage() {
         </form>
       </Modal>
 
+      {/* Confirm Delete Modal */}
+      <ConfirmModal
+        isOpen={isConfirmModalOpen}
+        onClose={() => {
+          setIsConfirmModalOpen(false);
+          setSelectedProject(null);
+        }}
+        onConfirm={handleDeleteProject}
+        title="Xác nhận xóa dự án"
+        message={`Bạn có chắc chắn muốn xóa dự án "${selectedProject?.name}"? Tất cả databases trong dự án này cũng sẽ bị xóa. Hành động này không thể hoàn tác.`}
+        confirmText="Xóa dự án"
+        cancelText="Hủy"
+        loading={deleteLoading}
+        variant="danger"
+      />
+
       {/* Projects Table */}
       <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
@@ -185,7 +214,8 @@ export default function ProjectsPage() {
                 projects.map((project, index) => (
                   <tr
                     key={project.id}
-                    className={`border-b border-slate-800 hover:bg-slate-800/50 transition-colors ${
+                    onClick={() => navigate(`/projects/${project.id}`)}
+                    className={`border-b border-slate-800 hover:bg-slate-800/50 transition-colors cursor-pointer ${
                       index === projects.length - 1 ? "border-b-0" : ""
                     }`}
                   >
@@ -211,15 +241,13 @@ export default function ProjectsPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-center gap-3">
                         <button
-                          onClick={() => handleDeleteProject(project.id)}
-                          disabled={deletingProjectId === project.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openDeleteConfirm(project);
+                          }}
                           className="text-red-500 hover:text-red-400 cursor-pointer transition-colors"
                         >
-                          {deletingProjectId === project.id ? (
-                            <Loader2 className="animate-spin" size={20} />
-                          ) : (
-                            <Trash size={20} />
-                          )}
+                          <Trash size={20} />
                         </button>
                       </div>
                     </td>
