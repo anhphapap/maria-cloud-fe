@@ -177,7 +177,7 @@ export default function ProjectsPage() {
         }}
         onConfirm={handleDeleteProject}
         title="Xác nhận xóa dự án"
-        message={`Bạn có chắc chắn muốn xóa dự án "${selectedProject?.name}"? Tất cả databases trong dự án này cũng sẽ bị xóa. Hành động này không thể hoàn tác.`}
+        message={`Bạn có chắc chắn muốn xóa dự án "${selectedProject?.name}"?`}
         confirmText="Xóa dự án"
         cancelText="Hủy"
         loading={deleteLoading}

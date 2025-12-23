@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
+  CircleAlert,
   Database,
   EllipsisVertical,
   Home,
@@ -13,6 +14,8 @@ import {
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import Modal from "../components/ui/Modal";
+import ConnectionInfoModal from "../components/ui/ConnectionInfoModal";
+import ConfirmModal from "../components/ui/ConfirmModal";
 import { authApis, endpoints } from "../config/api.config";
 import { useToast } from "../contexts/ToastContext";
 
@@ -26,28 +29,30 @@ export default function ProjectDetailPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("databases");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isConnectionModalOpen, setIsConnectionModalOpen] = useState(false);
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [selectedDatabase, setSelectedDatabase] = useState(null);
+  const [connectionInfo, setConnectionInfo] = useState(null);
+  const [connectionLoading, setConnectionLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [dbFormData, setDbFormData] = useState({
     name: "",
   });
   const [createLoading, setCreateLoading] = useState(false);
 
   const fetchProject = async () => {
-    // try {
-    //   const response = await authApis().get(`${endpoints.getProjects}/${id}`);
-    //   if (response.data.code === 200) {
-    //     setProject(response.data.data);
-    //   }
-    // } catch (error) {
-    //   addToast("Không thể tải thông tin dự án", "error");
-    //   navigate("/projects");
-    // }
-    setProject({
-      id: id,
-      name: "Project 1",
-      description: "Description 1",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    try {
+      const response = await authApis().get(endpoints.getProjectById(id));
+      if (response.data.code === 200) {
+        setProject(response.data.data);
+      } else {
+        addToast(response.data.message, "error");
+        navigate("/projects");
+      }
+    } catch (error) {
+      addToast(error.response?.data?.message || "Đã có lỗi xảy ra", "error");
+      navigate("/projects");
+    }
   };
 
   const fetchDatabases = async () => {
@@ -104,6 +109,52 @@ export default function ProjectDetailPage() {
     fetchDatabases();
   }, [id]);
 
+  const fetchDatabaseDetail = async (dbId) => {
+    setConnectionLoading(true);
+    try {
+      const response = await authApis().get(endpoints.getDatabaseById(dbId));
+      if (response.data.code === 200) {
+        setConnectionInfo(response.data.data);
+      } else {
+        addToast(
+          response.data.message || "Không thể lấy thông tin database",
+          "error"
+        );
+      }
+    } catch (error) {
+      addToast(error.response?.data?.message || "Đã có lỗi xảy ra", "error");
+    } finally {
+      setConnectionLoading(false);
+    }
+  };
+
+  const openConnectionInfo = (dbId) => {
+    setIsConnectionModalOpen(true);
+    fetchDatabaseDetail(dbId);
+  };
+
+  const handleDeleteDatabase = async () => {
+    if (!selectedDatabase) return;
+
+    try {
+      setDeleteLoading(true);
+      await authApis().delete(endpoints.deleteDatabase(selectedDatabase.id));
+      addToast("Xóa database thành công!", "success");
+      setIsConfirmModalOpen(false);
+      setSelectedDatabase(null);
+      fetchDatabases();
+    } catch (error) {
+      addToast(error.response?.data?.message || "Đã có lỗi xảy ra", "error");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const openDeleteConfirm = (database) => {
+    setSelectedDatabase(database);
+    setIsConfirmModalOpen(true);
+  };
+
   const getStatusBadge = (status) => {
     const statusStyles = {
       Healthy: "bg-emerald-500/10 text-emerald-500 border-emerald-500/30",
@@ -158,7 +209,7 @@ export default function ProjectDetailPage() {
           to="/projects"
           className="text-slate-400 hover:text-emerald-500 transition-colors"
         >
-          Projects
+          Dự án
         </Link>
         <span className="text-slate-500">/</span>
         <span className="text-slate-300">{project.name}</span>
@@ -286,6 +337,33 @@ export default function ProjectDetailPage() {
             </form>
           </Modal>
 
+          {/* Connection Info Modal */}
+          <ConnectionInfoModal
+            isOpen={isConnectionModalOpen}
+            onClose={() => {
+              setIsConnectionModalOpen(false);
+              setConnectionInfo(null);
+            }}
+            dbInfo={connectionInfo}
+            loading={connectionLoading}
+          />
+
+          {/* Confirm Delete Modal */}
+          <ConfirmModal
+            isOpen={isConfirmModalOpen}
+            onClose={() => {
+              setIsConfirmModalOpen(false);
+              setSelectedDatabase(null);
+            }}
+            onConfirm={handleDeleteDatabase}
+            title="Xác nhận xóa database"
+            message={`Bạn có chắc chắn muốn xóa database "${selectedDatabase?.name}"? Tất cả dữ liệu sẽ bị mất vĩnh viễn. Hành động này không thể hoàn tác.`}
+            confirmText="Xóa database"
+            cancelText="Hủy"
+            loading={deleteLoading}
+            variant="danger"
+          />
+
           {/* Databases Table */}
           <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
@@ -376,9 +454,25 @@ export default function ProjectDetailPage() {
                           </span>
                         </td>
                         <td className="px-6 py-4 flex items-center justify-center">
-                          <button className="text-slate-400 hover:text-slate-300 transition-colors cursor-pointer hover:bg-slate-800/50 rounded-full p-1">
-                            <EllipsisVertical size={20} />
-                          </button>
+                          <div className="flex items-center justify-start gap-3">
+                            <button
+                              onClick={() => openConnectionInfo(db.id)}
+                              className="text-slate-400 hover:bg-slate-800/50 rounded-full p-2 cursor-pointer transition-colors"
+                              title="Thông tin kết nối"
+                            >
+                              <CircleAlert
+                                size={20}
+                                className="text-green-500"
+                              />
+                            </button>
+                            <button
+                              onClick={() => openDeleteConfirm(db)}
+                              className="text-red-500 hover:bg-slate-800/50 rounded-full p-2 cursor-pointer transition-colors"
+                              title="Xóa database"
+                            >
+                              <Trash size={18} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))

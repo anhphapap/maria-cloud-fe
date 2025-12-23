@@ -1,10 +1,22 @@
-import { useState } from "react";
-import { Outlet } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import Header from "../components/Header";
 
 export default function MainLayout() {
-  const [activeTab, setActiveTab] = useState("overview");
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState("dashboard");
+
+  // Detect current route and set active tab
+  useEffect(() => {
+    const path = location.pathname.split("/")[1]; // Get first part of path
+    if (
+      path &&
+      ["dashboard", "projects", "databases", "backups", "logs"].includes(path)
+    ) {
+      setActiveTab(path);
+    }
+  }, [location.pathname]);
 
   return (
     <div className="h-screen bg-slate-950 flex">

@@ -12,6 +12,8 @@ export const endpoints = {
   deleteProject: (id) => `/projects/${id}`,
   getDatabases: "/dbs",
   createDatabase: "/dbs",
+  getDatabaseById: (id) => `/dbs/${id}`,
+  getProjectById: (id) => `/projects/${id}`,
   getDatabasesByProjectId: (projectId) => `/projects/${projectId}/dbs`,
   deleteDatabase: (id) => `/dbs/${id}`,
 };

@@ -1,8 +1,17 @@
-import { Database, Loader2, Plus, Search, Trash } from "lucide-react";
+import {
+  CircleAlert,
+  Database,
+  EllipsisVertical,
+  Loader2,
+  Plus,
+  Search,
+  Trash,
+} from "lucide-react";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import Modal from "../components/ui/Modal";
 import ConfirmModal from "../components/ui/ConfirmModal";
+import ConnectionInfoModal from "../components/ui/ConnectionInfoModal";
 import { useState, useEffect } from "react";
 import { authApis, endpoints } from "../config/api.config";
 import { useToast } from "../contexts/ToastContext";
@@ -13,12 +22,15 @@ export default function DatabasesPage() {
   const [loading, setLoading] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
+  const [connectionLoading, setConnectionLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isConnectionModalOpen, setIsConnectionModalOpen] = useState(false);
   const [selectedDatabase, setSelectedDatabase] = useState(null);
+  const [connectionInfo, setConnectionInfo] = useState(null);
   const [dbFormData, setDbFormData] = useState({
     name: "",
     projectId: "",
@@ -106,28 +118,52 @@ export default function DatabasesPage() {
     }
   };
 
-  const openDeleteConfirm = (database) => {
-    setSelectedDatabase(database);
-    setIsConfirmModalOpen(true);
-  };
-
   const getStatusBadge = (status) => {
     const statusStyles = {
-      ACTIVE: "bg-emerald-500/10 text-emerald-500 border-emerald-500/30",
-      IDLE: "bg-yellow-500/10 text-yellow-500 border-yellow-500/30",
-      DOWN: "bg-red-500/10 text-red-500 border-red-500/30",
+      Healthy: "bg-emerald-500/10 text-emerald-500 border-emerald-500/30",
+      Maintenance: "bg-yellow-500/10 text-yellow-500 border-yellow-500/30",
+      Stopped: "bg-red-500/10 text-red-500 border-red-500/30",
     };
 
     return (
       <span
         className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${
-          statusStyles[status] || statusStyles.IDLE
+          statusStyles[status] || statusStyles.Healthy
         }`}
       >
         <span className="w-1.5 h-1.5 rounded-full bg-current mr-1.5"></span>
         {status}
       </span>
     );
+  };
+
+  const openDeleteConfirm = (database) => {
+    setSelectedDatabase(database);
+    setIsConfirmModalOpen(true);
+  };
+
+  const fetchDatabaseDetail = async (dbId) => {
+    setConnectionLoading(true);
+    try {
+      const response = await authApis().get(endpoints.getDatabaseById(dbId));
+      if (response.data.code === 200) {
+        setConnectionInfo(response.data.data);
+      } else {
+        addToast(
+          response.data.message || "Không thể lấy thông tin database",
+          "error"
+        );
+      }
+    } catch (error) {
+      addToast(error.response?.data?.message || "Đã có lỗi xảy ra", "error");
+    } finally {
+      setConnectionLoading(false);
+    }
+  };
+
+  const openConnectionInfo = (dbId) => {
+    setIsConnectionModalOpen(true);
+    fetchDatabaseDetail(dbId);
   };
 
   const filteredDatabases = databases.filter((db) => {
@@ -169,33 +205,12 @@ export default function DatabasesPage() {
           />
           <Input
             type="text"
-            placeholder="Tìm kiếm databases hoặc hostnames..."
+            placeholder="Tìm kiếm databases..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10"
           />
         </div>
-
-        {/* Status Filter */}
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent cursor-pointer"
-        >
-          <option value="all">Tất cả trạng thái</option>
-          <option value="ACTIVE">Active</option>
-          <option value="IDLE">Idle</option>
-          <option value="DOWN">Down</option>
-        </select>
-
-        {/* Project Filter */}
-        <select
-          value={projectFilter}
-          onChange={(e) => setProjectFilter(e.target.value)}
-          className="px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent cursor-pointer"
-        >
-          <option value="all">Tất cả dự án</option>
-        </select>
       </div>
 
       {/* Confirm Delete Modal */}
@@ -294,6 +309,17 @@ export default function DatabasesPage() {
         </form>
       </Modal>
 
+      {/* Connection Info Modal */}
+      <ConnectionInfoModal
+        isOpen={isConnectionModalOpen}
+        onClose={() => {
+          setIsConnectionModalOpen(false);
+          setConnectionInfo(null);
+        }}
+        dbInfo={connectionInfo}
+        loading={connectionLoading}
+      />
+
       {/* Databases Table */}
       <div className="bg-slate-900/50 backdrop-blur-sm border border-slate-800 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
@@ -312,7 +338,7 @@ export default function DatabasesPage() {
                 <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300 uppercase tracking-wider">
                   Ngày tạo
                 </th>
-                <th className="px-6 py-4 text-center text-sm font-semibold text-slate-300 uppercase tracking-wider">
+                <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300 uppercase tracking-wider">
                   Hành động
                 </th>
               </tr>
@@ -348,8 +374,7 @@ export default function DatabasesPage() {
                     <td className="px-6 py-4">
                       <span className="text-slate-300">{db.projectName}</span>
                     </td>
-                    <td className="px-6 py-4">{getStatusBadge(db.status)}</td>
-                    <td className="px-6 py-4">{getStatusBadge(db.status)}</td>
+                    <td className="px-6 py-4">{getStatusBadge("Healthy")}</td>
                     <td className="px-6 py-4">
                       <span className="text-slate-400">
                         {new Date(db.createdAt).toLocaleDateString("vi-VN", {
@@ -362,16 +387,18 @@ export default function DatabasesPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <button className="text-emerald-500 hover:text-emerald-400 font-medium text-sm transition-colors">
-                          GO
-                        </button>
-                        <button className="text-slate-400 hover:text-slate-300 font-medium text-sm transition-colors">
-                          Manage
+                      <div className="flex items-center justify-start gap-3">
+                        <button
+                          onClick={() => openConnectionInfo(db.id)}
+                          className="text-slate-400 hover:bg-slate-800/50 rounded-full p-2 cursor-pointer transition-colors"
+                          title="Thông tin kết nối"
+                        >
+                          <CircleAlert size={20} className="text-green-500" />
                         </button>
                         <button
                           onClick={() => openDeleteConfirm(db)}
-                          className="text-red-500 hover:text-red-400 cursor-pointer transition-colors"
+                          className="text-red-500 hover:bg-slate-800/50 rounded-full p-2 cursor-pointer transition-colors"
+                          title="Xóa database"
                         >
                           <Trash size={18} />
                         </button>
@@ -398,7 +425,7 @@ export default function DatabasesPage() {
         </div>
 
         {/* Pagination */}
-        {filteredDatabases.length > 0 && (
+        {/* {filteredDatabases.length > 0 && (
           <div className="px-6 py-4 border-t border-slate-800 flex items-center justify-between">
             <span className="text-sm text-slate-400">
               Hiển thị 1-{filteredDatabases.length} trong tổng số{" "}
@@ -419,7 +446,7 @@ export default function DatabasesPage() {
               </button>
             </div>
           </div>
-        )}
+        )} */}
       </div>
     </div>
   );
