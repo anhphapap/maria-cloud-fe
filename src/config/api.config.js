@@ -12,10 +12,17 @@ export const endpoints = {
   deleteProject: (id) => `/projects/${id}`,
   getDatabases: "/dbs",
   createDatabase: "/dbs",
+  inviteDatabaseMember: (id) => `/dbs/${id}/invite`,
+  getDatabaseMembers: (id) => `/dbs/${id}/members`,
+  updateDatabaseMember: (dbId, memberId) => `/dbs/${dbId}/members/${memberId}`,
+  deleteDatabaseMember: (dbId, memberId) => `/dbs/${dbId}/members/${memberId}`,
+  getDatabaseLogs: (id) => `/dbs/${id}/logs`,
   getDatabaseById: (id) => `/dbs/${id}`,
   getProjectById: (id) => `/projects/${id}`,
   getDatabasesByProjectId: (projectId) => `/projects/${projectId}/dbs`,
   deleteDatabase: (id) => `/dbs/${id}`,
+  acceptInvitation: "/dbs/invitations/accept",
+  databaseAuditLogs: (dbId) => `/dbs/${dbId}/logs`,
 };
 
 export const authApis = () =>

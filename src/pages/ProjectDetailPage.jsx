@@ -404,11 +404,12 @@ export default function ProjectDetailPage() {
                     filteredDatabases.map((db, index) => (
                       <tr
                         key={db.id}
-                        className={`border-b border-slate-800 hover:bg-slate-800/50 transition-colors ${
+                        className={`border-b border-slate-800 hover:bg-slate-800/50 transition-colors cursor-pointer ${
                           index === filteredDatabases.length - 1
                             ? "border-b-0"
                             : ""
                         }`}
+                        onClick={() => navigate(`/databases/${db.id}`)}
                       >
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">

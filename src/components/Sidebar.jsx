@@ -20,7 +20,6 @@ export default function Sidebar({ activeTab, setActiveTab }) {
     { icon: FolderOpen, label: "Dự án", key: "projects" },
     { icon: Database, label: "Cơ sở dữ liệu", key: "databases" },
     { icon: Archive, label: "Sao lưu", key: "backups" },
-    { icon: Activity, label: "Hoạt động", key: "logs" },
   ];
   const dispatch = useContext(MyDispatchContext);
 
@@ -60,7 +59,7 @@ export default function Sidebar({ activeTab, setActiveTab }) {
             <button
               key={item.key}
               onClick={() => handleNavigate(item.key)}
-              className={`w-full flex items-center gap-3 rounded-lg mb-2 transition-colors ${
+              className={`w-full flex items-center gap-3 rounded-lg mb-2 transition-colors cursor-pointer ${
                 isMenuOpen ? "flex-row px-4 py-3" : "flex-col p-2"
               } ${
                 activeTab === item.key
@@ -85,7 +84,7 @@ export default function Sidebar({ activeTab, setActiveTab }) {
       <div className="p-4 border-t border-slate-800">
         <button
           onClick={handleLogout}
-          className={`w-full flex items-center gap-3  rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors ${
+          className={`w-full flex items-center gap-3  rounded-lg text-slate-400 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer ${
             isMenuOpen ? "flex-row px-4 py-3" : "flex-col p-2"
           }`}
         >

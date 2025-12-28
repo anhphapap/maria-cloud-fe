@@ -43,7 +43,15 @@ export default function LoginPage() {
         });
 
         addToast("Đăng nhập thành công!", "success");
-        navigate("/dashboard");
+
+        // Kiểm tra xem có URL intended không (từ invite link chẳng hạn)
+        const intendedUrl = localStorage.getItem("intendedUrl");
+        if (intendedUrl) {
+          localStorage.removeItem("intendedUrl");
+          navigate(intendedUrl);
+        } else {
+          navigate("/dashboard");
+        }
       } else {
         setError("Sai tài khoản hoặc mật khẩu!");
         addToast(

@@ -13,10 +13,12 @@ import Modal from "../components/ui/Modal";
 import ConfirmModal from "../components/ui/ConfirmModal";
 import ConnectionInfoModal from "../components/ui/ConnectionInfoModal";
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { authApis, endpoints } from "../config/api.config";
 import { useToast } from "../contexts/ToastContext";
 
 export default function DatabasesPage() {
+  const navigate = useNavigate();
   const [databases, setDatabases] = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -357,7 +359,8 @@ export default function DatabasesPage() {
                 filteredDatabases.map((db, index) => (
                   <tr
                     key={db.id}
-                    className={`border-b border-slate-800 hover:bg-slate-800/50 transition-colors ${
+                    onClick={() => navigate(`/databases/${db.id}`)}
+                    className={`border-b border-slate-800 hover:bg-slate-800/50 transition-colors cursor-pointer ${
                       index === filteredDatabases.length - 1 ? "border-b-0" : ""
                     }`}
                   >
@@ -389,14 +392,20 @@ export default function DatabasesPage() {
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-start gap-3">
                         <button
-                          onClick={() => openConnectionInfo(db.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openConnectionInfo(db.id);
+                          }}
                           className="text-slate-400 hover:bg-slate-800/50 rounded-full p-2 cursor-pointer transition-colors"
                           title="Thông tin kết nối"
                         >
                           <CircleAlert size={20} className="text-green-500" />
                         </button>
                         <button
-                          onClick={() => openDeleteConfirm(db)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openDeleteConfirm(db);
+                          }}
                           className="text-red-500 hover:bg-slate-800/50 rounded-full p-2 cursor-pointer transition-colors"
                           title="Xóa database"
                         >

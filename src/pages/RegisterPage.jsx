@@ -15,6 +15,7 @@ export default function RegisterPage() {
     username: "",
     password: "",
     name: "",
+    email: "",
   });
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -33,7 +34,8 @@ export default function RegisterPage() {
     if (
       !formData.username.trim() ||
       !formData.password.trim() ||
-      !formData.name.trim()
+      !formData.name.trim() ||
+      !formData.email.trim()
     ) {
       setError("Vui lòng điền đầy đủ thông tin");
       return;
@@ -45,6 +47,7 @@ export default function RegisterPage() {
         username: formData.username.trim(),
         password: formData.password,
         name: formData.name.trim(),
+        email: formData.email.trim(),
       });
 
       if (response.data.code === 201) {
@@ -83,6 +86,21 @@ export default function RegisterPage() {
                 <p className="text-sm text-red-500">{error}</p>
               </div>
             )}
+
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Email
+              </label>
+              <Input
+                type="email"
+                name="email"
+                placeholder="Nhập email"
+                value={formData.email}
+                onChange={handleChange}
+                required
+                disabled={loading}
+              />
+            </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
