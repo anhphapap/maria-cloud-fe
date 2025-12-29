@@ -19,7 +19,6 @@ export default function Sidebar({ activeTab, setActiveTab }) {
     { icon: LayoutGrid, label: "Tổng quan", key: "dashboard" },
     { icon: FolderOpen, label: "Dự án", key: "projects" },
     { icon: Database, label: "Cơ sở dữ liệu", key: "databases" },
-    { icon: Archive, label: "Sao lưu", key: "backups" },
   ];
   const dispatch = useContext(MyDispatchContext);
 

@@ -1,7 +1,21 @@
 import { X } from "lucide-react";
 
-export default function Modal({ isOpen, onClose, title, children }) {
+export default function Modal({
+  isOpen,
+  onClose,
+  title,
+  children,
+  size = "md",
+}) {
   if (!isOpen) return null;
+
+  const sizeClasses = {
+    sm: "max-w-sm",
+    md: "max-w-md",
+    lg: "max-w-2xl",
+    xl: "max-w-4xl",
+    large: "max-w-4xl", // alias for xl
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -12,7 +26,11 @@ export default function Modal({ isOpen, onClose, title, children }) {
       ></div>
 
       {/* Modal */}
-      <div className="relative bg-slate-900 border border-slate-800 rounded-xl shadow-2xl w-full max-w-md mx-4 animate-in fade-in zoom-in duration-200">
+      <div
+        className={`relative bg-slate-900 border border-slate-800 rounded-xl shadow-2xl w-full ${
+          sizeClasses[size] || sizeClasses.md
+        } mx-4 animate-in fade-in zoom-in duration-200`}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
           <h2 className="text-xl font-bold text-white">{title}</h2>

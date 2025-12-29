@@ -23,6 +23,20 @@ export const endpoints = {
   deleteDatabase: (id) => `/dbs/${id}`,
   acceptInvitation: "/dbs/invitations/accept",
   databaseAuditLogs: (dbId) => `/dbs/${dbId}/logs`,
+  databaseBackups: (dbId) => `/dbs/${dbId}/backups`,
+  createBackup: (dbId) => `/dbs/${dbId}/backups`,
+  downloadBackup: (dbId, backupId) =>
+    `/dbs/${dbId}/backups/${backupId}/download`,
+  databaseTables: (dbId) => `/dbs/${dbId}/tables`,
+  createTable: (dbId) => `/dbs/${dbId}/tables`,
+  deleteTable: (dbId, tableName) => `/dbs/${dbId}/tables/${tableName}`,
+  getTableData: (dbId, tableName) => `/dbs/${dbId}/tables/${tableName}/data`,
+  getTableStructure: (dbId, tableName) =>
+    `/dbs/${dbId}/tables/${tableName}/structure`,
+  updateTableStructure: (dbId, tableName) => `/dbs/${dbId}/tables/${tableName}`,
+  addTableRows: (dbId, tableName) => `/dbs/${dbId}/tables/${tableName}/rows`,
+  updateTableRows: (dbId, tableName) => `/dbs/${dbId}/tables/${tableName}/rows`,
+  deleteTableRows: (dbId, tableName) => `/dbs/${dbId}/tables/${tableName}/rows`,
 };
 
 export const authApis = () =>
