@@ -1194,8 +1194,8 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
                         {column.foreignKeyTable &&
                           foreignKeyColumnsMap[column.foreignKeyTable]?.map(
                             (col) => (
-                              <option key={col.Field} value={col.Field}>
-                                {col.Field} ({col.Type})
+                              <option key={col.name} value={col.name}>
+                                {col.name} ({col.type})
                               </option>
                             )
                           )}
