@@ -109,6 +109,7 @@ export const formatLogDetails = (log) => {
     const details = JSON.parse(log.details || "{}");
     const action = log.action;
 
+    // Member-related actions
     if (action === "UPDATE_MEMBER_ROLE") {
       return `Cập nhật vai trò thành viên (ID: ${details.memberId})`;
     }
@@ -118,14 +119,40 @@ export const formatLogDetails = (log) => {
     if (action === "REMOVE_MEMBER") {
       return `Xóa thành viên (ID: ${details.memberId})`;
     }
+    
+    // Database-related actions
     if (action === "CREATE_DATABASE") {
       return `Tạo database "${log.dbName}"`;
     }
     if (action === "DELETE_DATABASE") {
       return `Xóa database "${log.dbName}"`;
     }
+    
+    // Table-related actions with table name
+    if (action === "CREATE_TABLE") {
+      return details.tableName 
+        ? `Tạo bảng "${details.tableName}"` 
+        : details.description || "Tạo bảng";
+    }
+    if (action === "DELETE_TABLE") {
+      return details.tableName 
+        ? `Xóa bảng "${details.tableName}"` 
+        : details.description || "Xóa bảng";
+    }
+    if (action === "UPDATE_TABLE") {
+      const description = details.description || "Cập nhật cấu trúc";
+      return details.tableName 
+        ? `${description} bảng "${details.tableName}"` 
+        : description;
+    }
 
-    return details.description || "Không có mô tả";
+    // For other actions, combine description and table name if available
+    let message = details.description || "Không có mô tả";
+    if (details.tableName && !message.toLowerCase().includes("bảng")) {
+      message = `${message} trên bảng "${details.tableName}"`;
+    }
+    
+    return message;
   } catch (error) {
     return "Không có thông tin chi tiết";
   }

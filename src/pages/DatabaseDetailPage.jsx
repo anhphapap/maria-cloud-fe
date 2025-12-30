@@ -93,7 +93,7 @@ export default function DatabaseDetailPage() {
     setLogsLoading(true);
     try {
       const response = await authApis().get(
-        `${endpoints.getDatabaseLogs(id)}?page=${page}&size=20`
+        `${endpoints.getDatabaseLogs(id)}?page=${page}&size=10`
       );
       if (response.data.code === 200) {
         setLogs(response.data.data.content || []);

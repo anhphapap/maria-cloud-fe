@@ -1,4 +1,11 @@
-import { Download, HardDrive, Loader2, Plus, RefreshCw } from "lucide-react";
+import {
+  Download,
+  HardDrive,
+  Loader2,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+} from "lucide-react";
 import Button from "../../components/ui/Button";
 import ConfirmModal from "../../components/ui/ConfirmModal";
 import { useState, useEffect } from "react";
@@ -11,6 +18,9 @@ export default function DatabaseBackupTab({ dbId, databaseName }) {
   const [createLoading, setCreateLoading] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [downloadLoading, setDownloadLoading] = useState(false);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
+  const [selectedBackup, setSelectedBackup] = useState(null);
   const [pagination, setPagination] = useState({
     pageNumber: 0,
     pageSize: 20,
@@ -118,6 +128,37 @@ export default function DatabaseBackupTab({ dbId, databaseName }) {
       setDownloadLoading(false);
     }
   };
+
+  // Restore backup
+  const handleRestoreBackup = async () => {
+    if (!selectedBackup) return;
+
+    try {
+      setRestoreLoading(true);
+      const response = await authApis().post(
+        endpoints.restoreBackup(dbId, selectedBackup.id)
+      );
+
+      if (response.data.code === 200 || response.data.code === 201) {
+        addToast("Khôi phục backup thành công!", "success");
+        setIsRestoreModalOpen(false);
+        setSelectedBackup(null);
+      } else {
+        addToast(response.data.message || "Khôi phục backup thất bại", "error");
+      }
+    } catch (error) {
+      addToast(error.response?.data?.message || "Đã có lỗi xảy ra", "error");
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
+
+  // Open restore modal
+  const handleOpenRestoreModal = (backup) => {
+    setSelectedBackup(backup);
+    setIsRestoreModalOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Actions */}
@@ -159,6 +200,54 @@ export default function DatabaseBackupTab({ dbId, databaseName }) {
         cancelText="Hủy"
         loading={createLoading}
         variant="primary"
+      />
+
+      {/* Confirm Restore Backup Modal */}
+      <ConfirmModal
+        isOpen={isRestoreModalOpen}
+        onClose={() => {
+          setIsRestoreModalOpen(false);
+          setSelectedBackup(null);
+        }}
+        onConfirm={handleRestoreBackup}
+        title="Xác nhận khôi phục backup"
+        message={
+          <>
+            <p className="mb-3">
+              Bạn có chắc chắn muốn khôi phục database từ backup này?
+            </p>
+            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3 space-y-2">
+              <p className="text-sm text-slate-300">
+                <span className="text-slate-400">File:</span>{" "}
+                <span className="font-medium">{selectedBackup?.fileName}</span>
+              </p>
+              <p className="text-sm text-slate-300">
+                <span className="text-slate-400">Ngày tạo:</span>{" "}
+                <span className="font-medium">
+                  {selectedBackup &&
+                    new Date(selectedBackup.createdAt).toLocaleDateString(
+                      "vi-VN",
+                      {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      }
+                    )}
+                </span>
+              </p>
+            </div>
+            <p className="mt-3 text-red-400 text-sm font-medium">
+              ⚠️ Cảnh báo: Toàn bộ dữ liệu hiện tại sẽ bị ghi đè. Hành động này
+              không thể hoàn tác!
+            </p>
+          </>
+        }
+        confirmText="Khôi phục"
+        cancelText="Hủy"
+        loading={restoreLoading}
+        variant="danger"
       />
 
       {/* Statistics Cards */}
@@ -300,20 +389,35 @@ export default function DatabaseBackupTab({ dbId, databaseName }) {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() =>
-                          handleDownloadBackup(backup.id, backup.fileName)
-                        }
-                        className="text-emerald-500 hover:bg-slate-700/50 rounded-full p-2 cursor-pointer transition-colors"
-                        title="Tải xuống"
-                        disabled={downloadLoading}
-                      >
-                        {downloadLoading ? (
-                          <Loader2 className="animate-spin" size={16} />
-                        ) : (
-                          <Download size={16} />
-                        )}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleOpenRestoreModal(backup)}
+                          className="text-blue-500 hover:bg-slate-700/50 rounded-full p-2 cursor-pointer transition-colors"
+                          title="Khôi phục"
+                          disabled={restoreLoading}
+                        >
+                          {restoreLoading &&
+                          selectedBackup?.id === backup.id ? (
+                            <Loader2 className="animate-spin" size={16} />
+                          ) : (
+                            <RotateCcw size={16} />
+                          )}
+                        </button>
+                        <button
+                          onClick={() =>
+                            handleDownloadBackup(backup.id, backup.fileName)
+                          }
+                          className="text-emerald-500 hover:bg-slate-700/50 rounded-full p-2 cursor-pointer transition-colors"
+                          title="Tải xuống"
+                          disabled={downloadLoading}
+                        >
+                          {downloadLoading ? (
+                            <Loader2 className="animate-spin" size={16} />
+                          ) : (
+                            <Download size={16} />
+                          )}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -330,6 +434,51 @@ export default function DatabaseBackupTab({ dbId, databaseName }) {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {!loading && backups.length > 0 && pagination.totalPages > 1 && (
+          <div className="px-6 py-4 border-t border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="text-sm text-slate-400">
+              Hiển thị{" "}
+              <span className="font-medium text-white">
+                {pagination.pageNumber * pagination.pageSize + 1}
+              </span>{" "}
+              -{" "}
+              <span className="font-medium text-white">
+                {Math.min(
+                  (pagination.pageNumber + 1) * pagination.pageSize,
+                  pagination.totalElements
+                )}
+              </span>{" "}
+              trong tổng số{" "}
+              <span className="font-medium text-white">
+                {pagination.totalElements}
+              </span>{" "}
+              backup
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => handlePageChange(pagination.pageNumber - 1)}
+                disabled={pagination.pageNumber === 0 || loading}
+                className="px-3 py-2 text-sm cursor-pointer bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                ← Trước
+              </Button>
+              <span className="text-sm text-slate-400">
+                Trang {pagination.pageNumber + 1} / {pagination.totalPages}
+              </span>
+              <Button
+                onClick={() => handlePageChange(pagination.pageNumber + 1)}
+                disabled={
+                  pagination.pageNumber >= pagination.totalPages - 1 || loading
+                }
+                className="px-3 py-2 text-sm cursor-pointer bg-slate-700 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Sau →
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,10 +1,39 @@
-import { Clock, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Clock, Loader2, ChevronLeft, ChevronRight, Table } from "lucide-react";
 import {
   getActionColor,
   getActionIcon,
   getActionLabel,
   formatLogDetails,
 } from "./database.utils.jsx";
+
+const LogDescription = ({ log }) => {
+  const description = formatLogDetails(log);
+  
+  // Parse table name from details if available
+  try {
+    const details = JSON.parse(log.details || "{}");
+    if (details.tableName) {
+      // Highlight table name in description
+      const parts = description.split(`"${details.tableName}"`);
+      if (parts.length > 1) {
+        return (
+          <>
+            {parts[0]}
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 text-emerald-400 rounded font-medium">
+              <Table size={12} />
+              {details.tableName}
+            </span>
+            {parts[1]}
+          </>
+        );
+      }
+    }
+  } catch (error) {
+    // Fall through to default
+  }
+  
+  return <>{description}</>;
+};
 
 export default function DatabaseLogsTab({
   logs,
@@ -78,9 +107,9 @@ export default function DatabaseLogsTab({
                         </div>
 
                         {/* Description */}
-                        <p className="text-sm text-slate-300">
-                          {formatLogDetails(log)}
-                        </p>
+                        <div className="text-sm text-slate-300">
+                          <LogDescription log={log} />
+                        </div>
                       </div>
 
                       {/* Time */}

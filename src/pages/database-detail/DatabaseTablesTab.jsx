@@ -13,6 +13,7 @@ import {
   Code,
   Edit,
   Save,
+  Upload,
 } from "lucide-react";
 import Button from "../../components/ui/Button";
 import Modal from "../../components/ui/Modal";
@@ -32,6 +33,9 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isViewDataModalOpen, setIsViewDataModalOpen] = useState(false);
   const [isStructureModalOpen, setIsStructureModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [importLoading, setImportLoading] = useState(false);
   const [selectedTable, setSelectedTable] = useState(null);
   const [tableData, setTableData] = useState(null);
   const [tableStructure, setTableStructure] = useState(null);
@@ -47,6 +51,7 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
   const [rowModalMode, setRowModalMode] = useState("add"); // 'add' or 'edit'
   const [editingRow, setEditingRow] = useState(null);
   const [rowFormData, setRowFormData] = useState({});
+  const [rowFormError, setRowFormError] = useState(""); // Error message for row form
   const { addToast } = useToast();
 
   // Structure modification state
@@ -81,6 +86,9 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
       },
     ],
   });
+
+  // State for foreign key reference columns
+  const [foreignKeyColumnsMap, setForeignKeyColumnsMap] = useState({});
 
   const columnTypes = [
     "serial",
@@ -122,6 +130,29 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
     }
   };
 
+  // Fetch foreign key columns for a table
+  const fetchForeignKeyColumns = async (tableName) => {
+    if (!tableName) return;
+
+    try {
+      const response = await authApis().get(
+        endpoints.getTableColumns(dbId, tableName)
+      );
+      if (response.data.code === 200) {
+        setForeignKeyColumnsMap((prev) => ({
+          ...prev,
+          [tableName]: response.data.data || [],
+        }));
+      }
+    } catch (error) {
+      console.error("Error fetching foreign key columns:", error);
+      addToast(
+        error.response?.data?.message || "Không thể lấy danh sách cột",
+        "error"
+      );
+    }
+  };
+
   // Add new column
   const addColumn = () => {
     setFormData({
@@ -152,6 +183,16 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
   const updateColumn = (index, field, value) => {
     const newColumns = [...formData.columns];
     newColumns[index] = { ...newColumns[index], [field]: value };
+
+    // If updating foreignKeyTable, fetch columns for that table
+    if (field === "foreignKeyTable") {
+      if (value) {
+        fetchForeignKeyColumns(value);
+      }
+      // Reset foreignKeyColumn when table changes
+      newColumns[index].foreignKeyColumn = "";
+    }
+
     setFormData({ ...formData, columns: newColumns });
   };
 
@@ -221,7 +262,23 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
         addToast(response.data.message || "Tạo bảng thất bại", "error");
       }
     } catch (error) {
-      addToast(error.response?.data?.message || "Đã có lỗi xảy ra", "error");
+      // Hiển thị lỗi chi tiết từ API
+      let errorMsg = "Đã có lỗi xảy ra khi tạo bảng";
+
+      if (error.response?.data?.message) {
+        errorMsg = error.response.data.message;
+      } else if (error.response?.data?.error) {
+        errorMsg = error.response.data.error;
+      } else if (error.response?.data) {
+        errorMsg =
+          typeof error.response.data === "string"
+            ? error.response.data
+            : JSON.stringify(error.response.data);
+      } else if (error.message) {
+        errorMsg = `Lỗi: ${error.message}`;
+      }
+
+      addToast(errorMsg, "error");
     } finally {
       setCreateLoading(false);
     }
@@ -250,7 +307,23 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
         addToast(response.data?.message || "Xóa bảng thất bại", "error");
       }
     } catch (error) {
-      addToast(error.response?.data?.message || "Đã có lỗi xảy ra", "error");
+      // Hiển thị lỗi chi tiết từ API
+      let errorMsg = "Đã có lỗi xảy ra khi xóa bảng";
+
+      if (error.response?.data?.message) {
+        errorMsg = error.response.data.message;
+      } else if (error.response?.data?.error) {
+        errorMsg = error.response.data.error;
+      } else if (error.response?.data) {
+        errorMsg =
+          typeof error.response.data === "string"
+            ? error.response.data
+            : JSON.stringify(error.response.data);
+      } else if (error.message) {
+        errorMsg = `Lỗi: ${error.message}`;
+      }
+
+      addToast(errorMsg, "error");
     } finally {
       setDeleteLoading(false);
     }
@@ -412,9 +485,18 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
   const handleOpenAddRow = () => {
     setRowModalMode("add");
     setEditingRow(null);
+    setRowFormError(""); // Clear any previous errors
     const initialData = {};
     tableStructure?.columns?.forEach((col) => {
-      initialData[col.Field] = "";
+      // Skip auto_increment fields and fields with default values
+      const isAutoIncrement =
+        col.Extra?.toLowerCase().includes("auto_increment");
+      const hasDefaultValue = col.Default !== null && col.Default !== undefined;
+
+      if (!isAutoIncrement) {
+        // Initialize with empty string even if has default, user can choose to override
+        initialData[col.Field] = "";
+      }
     });
     setRowFormData(initialData);
     setIsRowModalOpen(true);
@@ -424,6 +506,7 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
   const handleOpenEditRow = (row) => {
     setRowModalMode("edit");
     setEditingRow(row);
+    setRowFormError(""); // Clear any previous errors
     setRowFormData({ ...row });
     setIsRowModalOpen(true);
   };
@@ -432,24 +515,67 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
   const handleAddRows = async () => {
     try {
       setRowActionLoading(true);
+      setRowFormError(""); // Clear previous errors
+
+      // Filter out auto_increment fields and empty fields with default values
+      const cleanedData = { ...rowFormData };
+      tableStructure?.columns?.forEach((col) => {
+        // Remove auto_increment fields
+        if (col.Extra?.toLowerCase().includes("auto_increment")) {
+          delete cleanedData[col.Field];
+        }
+        // Remove empty fields that have default values
+        else if (
+          col.Default !== null &&
+          col.Default !== undefined &&
+          (!cleanedData[col.Field] || cleanedData[col.Field].trim() === "")
+        ) {
+          delete cleanedData[col.Field];
+        }
+      });
+
       const payload = {
-        data: [rowFormData],
+        data: [cleanedData],
       };
 
+      console.log("Adding row with payload:", payload);
       const response = await authApis().post(
         endpoints.addTableRows(dbId, selectedTable.name),
         payload
       );
 
+      console.log("Add row response:", response);
       if (response.data.code === 200 || response.data.code === 201) {
         addToast("Thêm dòng thành công!", "success");
         setIsRowModalOpen(false);
+        setRowFormError("");
         fetchTableData(selectedTable.name, dataPage);
       } else {
-        addToast(response.data.message || "Thêm dòng thất bại", "error");
+        console.error("Add row failed:", response.data);
+        const errorMsg = response.data.message || "Thêm dòng thất bại";
+        setRowFormError(errorMsg);
       }
     } catch (error) {
-      addToast(error.response?.data?.message || "Đã có lỗi xảy ra", "error");
+      console.error("Add row error:", error);
+
+      // Hiển thị lỗi chi tiết từ API
+      let errorMsg = "Đã có lỗi xảy ra khi thêm dòng";
+
+      if (error.response?.data?.message) {
+        errorMsg = error.response.data.message;
+      } else if (error.response?.data?.error) {
+        errorMsg = error.response.data.error;
+      } else if (error.response?.data) {
+        // Nếu có data nhưng không có message, hiển thị toàn bộ
+        errorMsg =
+          typeof error.response.data === "string"
+            ? error.response.data
+            : JSON.stringify(error.response.data);
+      } else if (error.message) {
+        errorMsg = `Lỗi: ${error.message}`;
+      }
+
+      setRowFormError(errorMsg);
     } finally {
       setRowActionLoading(false);
     }
@@ -459,13 +585,15 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
   const handleUpdateRows = async () => {
     try {
       setRowActionLoading(true);
+      setRowFormError(""); // Clear previous errors
 
       // Tìm primary key column
       const pkColumn = tableStructure?.columns?.find(
         (col) => col.Key === "PRI"
       );
       if (!pkColumn) {
-        addToast("Không tìm thấy primary key", "error");
+        setRowFormError("Không tìm thấy primary key");
+        setRowActionLoading(false);
         return;
       }
 
@@ -474,21 +602,45 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
         data: [rowFormData],
       };
 
+      console.log("Updating row with payload:", payload);
       const response = await authApis().patch(
         endpoints.updateTableRows(dbId, selectedTable.name),
         payload
       );
 
+      console.log("Update row response:", response);
       if (response.data.code === 200 || response.data.code === 201) {
         addToast("Cập nhật dòng thành công!", "success");
         setIsRowModalOpen(false);
+        setRowFormError("");
         setSelectedRows([]);
         fetchTableData(selectedTable.name, dataPage);
       } else {
-        addToast(response.data.message || "Cập nhật thất bại", "error");
+        console.error("Update row failed:", response.data);
+        const errorMsg = response.data.message || "Cập nhật thất bại";
+        setRowFormError(errorMsg);
       }
     } catch (error) {
-      addToast(error.response?.data?.message || "Đã có lỗi xảy ra", "error");
+      console.error("Update row error:", error);
+
+      // Hiển thị lỗi chi tiết từ API
+      let errorMsg = "Đã có lỗi xảy ra khi cập nhật dòng";
+
+      if (error.response?.data?.message) {
+        errorMsg = error.response.data.message;
+      } else if (error.response?.data?.error) {
+        errorMsg = error.response.data.error;
+      } else if (error.response?.data) {
+        // Nếu có data nhưng không có message, hiển thị toàn bộ
+        errorMsg =
+          typeof error.response.data === "string"
+            ? error.response.data
+            : JSON.stringify(error.response.data);
+      } else if (error.message) {
+        errorMsg = `Lỗi: ${error.message}`;
+      }
+
+      setRowFormError(errorMsg);
     } finally {
       setRowActionLoading(false);
     }
@@ -508,6 +660,7 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
     try {
       setRowActionLoading(true);
 
+      console.log("Deleting rows with ids:", selectedRows);
       const response = await authApis().delete(
         endpoints.deleteTableRows(dbId, selectedTable.name),
         {
@@ -515,6 +668,7 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
         }
       );
 
+      console.log("Delete rows response:", response);
       if (
         response.status === 200 ||
         response.status === 204 ||
@@ -524,10 +678,30 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
         setSelectedRows([]);
         fetchTableData(selectedTable.name, dataPage);
       } else {
+        console.error("Delete rows failed:", response.data);
         addToast(response.data?.message || "Xóa thất bại", "error");
       }
     } catch (error) {
-      addToast(error.response?.data?.message || "Đã có lỗi xảy ra", "error");
+      console.error("Delete rows error:", error);
+
+      // Hiển thị lỗi chi tiết từ API
+      let errorMsg = "Đã có lỗi xảy ra khi xóa dòng";
+
+      if (error.response?.data?.message) {
+        errorMsg = error.response.data.message;
+      } else if (error.response?.data?.error) {
+        errorMsg = error.response.data.error;
+      } else if (error.response?.data) {
+        // Nếu có data nhưng không có message, hiển thị toàn bộ
+        errorMsg =
+          typeof error.response.data === "string"
+            ? error.response.data
+            : JSON.stringify(error.response.data);
+      } else if (error.message) {
+        errorMsg = `Lỗi: ${error.message}`;
+      }
+
+      addToast(errorMsg, "error");
     } finally {
       setRowActionLoading(false);
     }
@@ -594,7 +768,23 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
         addToast(response.data.message || "Cập nhật thất bại", "error");
       }
     } catch (error) {
-      addToast(error.response?.data?.message || "Đã có lỗi xảy ra", "error");
+      // Hiển thị lỗi chi tiết từ API
+      let errorMsg = "Đã có lỗi xảy ra khi cập nhật cấu trúc bảng";
+
+      if (error.response?.data?.message) {
+        errorMsg = error.response.data.message;
+      } else if (error.response?.data?.error) {
+        errorMsg = error.response.data.error;
+      } else if (error.response?.data) {
+        errorMsg =
+          typeof error.response.data === "string"
+            ? error.response.data
+            : JSON.stringify(error.response.data);
+      } else if (error.message) {
+        errorMsg = `Lỗi: ${error.message}`;
+      }
+
+      addToast(errorMsg, "error");
     } finally {
       setUpdateLoading(false);
     }
@@ -617,6 +807,61 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
         },
       ],
     });
+    setForeignKeyColumnsMap({}); // Reset foreign key columns cache
+  };
+
+  // Handle import SQL file
+  const handleImportFile = async () => {
+    if (!selectedFile) {
+      addToast("Vui lòng chọn file SQL", "error");
+      return;
+    }
+
+    try {
+      setImportLoading(true);
+
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      const response = await authApis().post(
+        endpoints.importSqlFile(dbId),
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
+      );
+
+      if (response.data.code === 200 || response.data.code === 201) {
+        addToast("Import file SQL thành công!", "success");
+        setIsImportModalOpen(false);
+        setSelectedFile(null);
+        fetchTables();
+      } else {
+        addToast(response.data.message || "Import file thất bại", "error");
+      }
+    } catch (error) {
+      console.error("Import error:", error);
+      let errorMsg = "Đã có lỗi xảy ra khi import file";
+
+      if (error.response?.data?.message) {
+        errorMsg = error.response.data.message;
+      } else if (error.response?.data?.error) {
+        errorMsg = error.response.data.error;
+      } else if (error.response?.data) {
+        errorMsg =
+          typeof error.response.data === "string"
+            ? error.response.data
+            : JSON.stringify(error.response.data);
+      } else if (error.message) {
+        errorMsg = `Lỗi: ${error.message}`;
+      }
+
+      addToast(errorMsg, "error");
+    } finally {
+      setImportLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -645,6 +890,13 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
             Làm mới
           </Button>
           <Button
+            onClick={() => setIsImportModalOpen(true)}
+            className="flex items-center gap-2 w-fit cursor-pointer bg-blue-600 hover:bg-blue-700"
+          >
+            <Upload size={18} />
+            Import File
+          </Button>
+          <Button
             onClick={() => setIsCreateModalOpen(true)}
             className="flex items-center gap-2 w-fit cursor-pointer"
           >
@@ -653,6 +905,98 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
           </Button>
         </div>
       </div>
+
+      {/* Import SQL File Modal */}
+      <Modal
+        isOpen={isImportModalOpen}
+        onClose={() => {
+          setIsImportModalOpen(false);
+          setSelectedFile(null);
+        }}
+        title="Import File SQL"
+        size="md"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-2">
+              Chọn file SQL <span className="text-red-500">*</span>
+            </label>
+            <div className="border-2 border-dashed border-slate-700 rounded-lg p-6 hover:border-emerald-500 transition-colors">
+              <input
+                type="file"
+                accept=".sql"
+                onChange={(e) => setSelectedFile(e.target.files[0])}
+                className="hidden"
+                id="sql-file-input"
+                disabled={importLoading}
+              />
+              <label
+                htmlFor="sql-file-input"
+                className="cursor-pointer flex flex-col items-center"
+              >
+                <Upload size={48} className="text-slate-500 mb-3" />
+                <p className="text-slate-300 font-medium mb-1">
+                  {selectedFile ? selectedFile.name : "Chọn file SQL"}
+                </p>
+                <p className="text-slate-500 text-sm">
+                  Hỗ trợ file .sql (tối đa 50MB)
+                </p>
+              </label>
+            </div>
+          </div>
+
+          {selectedFile && (
+            <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-3 space-y-1">
+              <p className="text-sm text-slate-300">
+                <span className="text-slate-400">Tên file:</span>{" "}
+                <span className="font-medium">{selectedFile.name}</span>
+              </p>
+              <p className="text-sm text-slate-300">
+                <span className="text-slate-400">Kích thước:</span>{" "}
+                <span className="font-medium">
+                  {(selectedFile.size / 1024).toFixed(2)} KB
+                </span>
+              </p>
+            </div>
+          )}
+
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+            <p className="text-sm text-blue-400">
+              ℹ️ File SQL sẽ được thực thi để tạo bảng và dữ liệu trong database
+            </p>
+          </div>
+
+          <div className="flex gap-3 pt-4 border-t border-slate-700">
+            <Button
+              onClick={() => {
+                setIsImportModalOpen(false);
+                setSelectedFile(null);
+              }}
+              disabled={importLoading}
+              className="flex-1 bg-slate-800 hover:bg-slate-700 cursor-pointer"
+            >
+              Hủy
+            </Button>
+            <Button
+              onClick={handleImportFile}
+              disabled={!selectedFile || importLoading}
+              className="flex-1 cursor-pointer flex items-center justify-center gap-2"
+            >
+              {importLoading ? (
+                <>
+                  <Loader2 className="animate-spin" size={18} />
+                  Đang import...
+                </>
+              ) : (
+                <>
+                  <Upload size={18} />
+                  Import
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Create Table Modal */}
       <Modal
@@ -808,16 +1152,21 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
                       <label className="block text-xs text-slate-400 mb-1">
                         Bảng tham chiếu
                       </label>
-                      <Input
-                        className="px-3 py-3"
-                        type="text"
-                        placeholder="vd: users"
+                      <select
                         value={column.foreignKeyTable}
                         onChange={(e) =>
                           updateColumn(index, "foreignKeyTable", e.target.value)
                         }
                         disabled={createLoading}
-                      />
+                        className="w-full px-3 py-3.25 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      >
+                        <option value="">-- Chọn bảng --</option>
+                        {tables.map((table) => (
+                          <option key={table.name} value={table.name}>
+                            {table.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
 
                     {/* Foreign Key Column */}
@@ -825,10 +1174,7 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
                       <label className="block text-xs text-slate-400 mb-1">
                         Cột tham chiếu
                       </label>
-                      <Input
-                        className="px-3 py-3"
-                        type="text"
-                        placeholder="vd: id"
+                      <select
                         value={column.foreignKeyColumn}
                         onChange={(e) =>
                           updateColumn(
@@ -837,8 +1183,23 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
                             e.target.value
                           )
                         }
-                        disabled={createLoading}
-                      />
+                        disabled={
+                          createLoading ||
+                          !column.foreignKeyTable ||
+                          !foreignKeyColumnsMap[column.foreignKeyTable]
+                        }
+                        className="w-full px-3 py-3.25 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
+                      >
+                        <option value="">-- Chọn cột --</option>
+                        {column.foreignKeyTable &&
+                          foreignKeyColumnsMap[column.foreignKeyTable]?.map(
+                            (col) => (
+                              <option key={col.Field} value={col.Field}>
+                                {col.Field} ({col.Type})
+                              </option>
+                            )
+                          )}
+                      </select>
                     </div>
 
                     {/* On Delete */}
@@ -952,26 +1313,28 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
         onMarkForModify={handleMarkColumnForModify}
         onUpdate={handleUpdateStructure}
         columnTypes={columnTypes}
+        constraintOptions={constraintOptions}
       />
 
       {/* Row Add/Edit Modal - Custom with higher z-index */}
       {isRowModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+        <div className="fixed inset-0 z-[60] flex items-start sm:items-center justify-center p-2 sm:p-4 overflow-y-auto">
           {/* Backdrop */}
           <div
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm"
             onClick={() => {
               setIsRowModalOpen(false);
               setEditingRow(null);
               setRowFormData({});
+              setRowFormError("");
             }}
           ></div>
 
           {/* Modal */}
-          <div className="relative bg-slate-900 border border-slate-800 rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in duration-200">
-            {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 sticky top-0 bg-slate-900 z-10">
-              <h2 className="text-xl font-bold text-white">
+          <div className="relative bg-slate-900 border border-slate-800 rounded-xl shadow-2xl w-full max-w-2xl my-4 sm:my-8 max-h-[95vh] sm:max-h-[85vh] flex flex-col animate-in fade-in zoom-in duration-200">
+            {/* Header - Fixed */}
+            <div className="flex items-center justify-between px-4 md:px-6 py-3 border-b border-slate-800 bg-slate-900 flex-shrink-0">
+              <h2 className="text-base md:text-lg font-bold text-white">
                 {rowModalMode === "add" ? "Thêm dòng mới" : "Sửa dòng"}
               </h2>
               <button
@@ -979,80 +1342,124 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
                   setIsRowModalOpen(false);
                   setEditingRow(null);
                   setRowFormData({});
+                  setRowFormError("");
                 }}
                 className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-800"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            {/* Content */}
-            <div className="p-6">
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  {tableStructure?.columns?.map((col) => (
-                    <div key={col.Field}>
-                      <label className="block text-xs text-slate-400 mb-1">
-                        {col.Field}
-                        {col.Null === "NO" && (
-                          <span className="text-red-500 ml-1">*</span>
-                        )}
-                      </label>
-                      <Input
-                        type="text"
-                        placeholder={`${col.Type}`}
-                        value={rowFormData[col.Field] || ""}
-                        onChange={(e) =>
-                          setRowFormData({
-                            ...rowFormData,
-                            [col.Field]: e.target.value,
-                          })
-                        }
-                        disabled={
-                          rowActionLoading ||
-                          (rowModalMode === "edit" && col.Key === "PRI")
-                        }
-                      />
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {col.Type} {col.Extra && `(${col.Extra})`}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="flex gap-3 pt-4 border-t border-slate-700">
-                  <Button
-                    onClick={() => {
-                      setIsRowModalOpen(false);
-                      setEditingRow(null);
-                      setRowFormData({});
-                    }}
-                    disabled={rowActionLoading}
-                    className="flex-1 bg-slate-800 hover:bg-slate-700"
-                  >
-                    Hủy
-                  </Button>
-                  <Button
-                    onClick={
-                      rowModalMode === "add" ? handleAddRows : handleUpdateRows
-                    }
-                    disabled={rowActionLoading}
-                    className="flex-1 cursor-pointer"
-                  >
-                    {rowActionLoading ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <Loader2 className="animate-spin" size={20} />
-                        Đang lưu...
-                      </span>
-                    ) : (
-                      <>
-                        <Save size={16} className="mr-2" />
-                        {rowModalMode === "add" ? "Thêm" : "Cập nhật"}
-                      </>
-                    )}
-                  </Button>
-                </div>
+            {/* Error Message */}
+            {rowFormError && (
+              <div className="mx-4 md:mx-6 mt-3 md:mt-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg">
+                <p className="text-sm text-red-400 break-words">
+                  {rowFormError}
+                </p>
               </div>
+            )}
+
+            {/* Content - Scrollable */}
+            <div className="overflow-y-auto flex-1 px-4 md:px-6 py-3 md:py-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 md:gap-3">
+                {tableStructure?.columns
+                  ?.filter((col) => {
+                    // Hide auto_increment fields in add mode
+                    if (
+                      rowModalMode === "add" &&
+                      col.Extra?.toLowerCase().includes("auto_increment")
+                    ) {
+                      return false;
+                    }
+                    return true;
+                  })
+                  ?.map((col) => {
+                    const isAutoIncrement =
+                      col.Extra?.toLowerCase().includes("auto_increment");
+                    const hasDefaultValue =
+                      col.Default !== null && col.Default !== undefined;
+                    const isRequired =
+                      col.Null === "NO" && !isAutoIncrement && !hasDefaultValue;
+
+                    return (
+                      <div key={col.Field}>
+                        <label className="block text-xs text-slate-400 mb-1">
+                          {col.Field}
+                          {isRequired && (
+                            <span className="text-red-500 ml-1">*</span>
+                          )}
+                          {isAutoIncrement && (
+                            <span className="text-emerald-500 ml-1 text-xs">
+                              (auto)
+                            </span>
+                          )}
+                          {!isAutoIncrement &&
+                            hasDefaultValue &&
+                            rowModalMode === "add" && (
+                              <span className="text-blue-400 ml-1 text-xs">
+                                (default: {col.Default})
+                              </span>
+                            )}
+                        </label>
+                        <Input
+                          type="text"
+                          placeholder={`${col.Type}`}
+                          value={rowFormData[col.Field] || ""}
+                          onChange={(e) =>
+                            setRowFormData({
+                              ...rowFormData,
+                              [col.Field]: e.target.value,
+                            })
+                          }
+                          disabled={
+                            rowActionLoading ||
+                            isAutoIncrement ||
+                            (rowModalMode === "edit" && col.Key === "PRI")
+                          }
+                        />
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {col.Type} {col.Extra && `(${col.Extra})`}
+                        </p>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
+            {/* Footer - Fixed */}
+            <div className="flex gap-2 md:gap-3 px-4 md:px-6 py-3 border-t border-slate-700 bg-slate-900 flex-shrink-0">
+              <Button
+                onClick={() => {
+                  setIsRowModalOpen(false);
+                  setEditingRow(null);
+                  setRowFormData({});
+                }}
+                disabled={rowActionLoading}
+                className="flex-1 bg-slate-800 hover:bg-slate-700"
+              >
+                Hủy
+              </Button>
+              <Button
+                onClick={
+                  rowModalMode === "add" ? handleAddRows : handleUpdateRows
+                }
+                disabled={rowActionLoading}
+                className="flex-1 cursor-pointer flex items-center justify-center gap-2"
+              >
+                {rowActionLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Loader2 className="animate-spin" size={18} />
+                    <span className="text-sm">Đang lưu...</span>
+                  </span>
+                ) : (
+                  <>
+                    <Save size={16} />
+                    <span className="text-sm">
+                      {rowModalMode === "add" ? "Thêm" : "Cập nhật"}
+                    </span>
+                  </>
+                )}
+              </Button>
             </div>
           </div>
         </div>
@@ -1083,29 +1490,30 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
           ) : tableData ? (
             <>
               {/* Actions Bar */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Button
                     onClick={handleOpenAddRow}
                     disabled={rowActionLoading}
-                    className="flex items-center gap-2 text-sm cursor-pointer"
+                    className="flex items-center gap-2 text-xs sm:text-sm cursor-pointer"
                   >
                     <Plus size={16} />
-                    Thêm dòng
+                    <span className="hidden sm:inline">Thêm dòng</span>
+                    <span className="sm:hidden">Thêm</span>
                   </Button>
                   {selectedRows.length > 0 && (
                     <Button
                       onClick={handleDeleteRows}
                       disabled={rowActionLoading}
-                      className="flex items-center gap-2 text-sm cursor-pointer bg-red-600 hover:bg-red-700"
+                      className="flex items-center gap-2 text-xs sm:text-sm cursor-pointer bg-red-600 hover:bg-red-700"
                     >
                       <Trash size={16} />
                       Xóa ({selectedRows.length})
                     </Button>
                   )}
                 </div>
-                <span className="text-sm text-slate-400">
-                  Tổng số:{" "}
+                <span className="text-xs sm:text-sm text-slate-400">
+                  Tổng:{" "}
                   <span className="text-white font-medium">
                     {tableData.totalRows}
                   </span>{" "}
@@ -1114,11 +1522,11 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
               </div>
 
               {/* Data Table */}
-              <div className="overflow-x-auto max-h-96 border border-slate-700 rounded-lg">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto max-h-[60vh] sm:max-h-96 border border-slate-700 rounded-lg">
+                <table className="w-full text-xs sm:text-sm">
                   <thead className="bg-slate-800 sticky top-0">
                     <tr>
-                      <th className="px-4 py-3 text-left border-b border-slate-700">
+                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left border-b border-slate-700">
                         <input
                           type="checkbox"
                           checked={
@@ -1133,13 +1541,13 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
                       {tableData.columns?.map((col) => (
                         <th
                           key={col}
-                          className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider border-b border-slate-700"
+                          className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider border-b border-slate-700 whitespace-nowrap"
                         >
                           {col}
                         </th>
                       ))}
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider border-b border-slate-700">
-                        Hành động
+                      <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-semibold text-slate-300 uppercase tracking-wider border-b border-slate-700 whitespace-nowrap">
+                        Action
                       </th>
                     </tr>
                   </thead>
@@ -1159,7 +1567,7 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
                               isSelected ? "bg-emerald-500/5" : ""
                             }`}
                           >
-                            <td className="px-4 py-3">
+                            <td className="px-2 sm:px-4 py-2 sm:py-3">
                               <input
                                 type="checkbox"
                                 checked={isSelected}
@@ -1170,10 +1578,12 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
                             {tableData.columns?.map((col) => (
                               <td
                                 key={col}
-                                className="px-4 py-3 text-slate-300"
+                                className="px-2 sm:px-4 py-2 sm:py-3 text-slate-300"
                               >
                                 {row[col] !== null && row[col] !== undefined ? (
-                                  String(row[col])
+                                  <span className="break-all">
+                                    {String(row[col])}
+                                  </span>
                                 ) : (
                                   <span className="text-slate-500 italic">
                                     null
@@ -1181,14 +1591,14 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
                                 )}
                               </td>
                             ))}
-                            <td className="px-4 py-3">
+                            <td className="px-2 sm:px-4 py-2 sm:py-3">
                               <button
                                 onClick={() => handleOpenEditRow(row)}
                                 disabled={rowActionLoading}
-                                className="text-blue-400 hover:text-blue-300 disabled:opacity-50"
+                                className="text-blue-400 hover:text-blue-300 disabled:opacity-50 p-1"
                                 title="Sửa"
                               >
-                                <Edit size={16} />
+                                <Edit size={14} className="sm:w-4 sm:h-4" />
                               </button>
                             </td>
                           </tr>
@@ -1198,7 +1608,7 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
                       <tr>
                         <td
                           colSpan={(tableData.columns?.length || 0) + 2}
-                          className="px-4 py-8 text-center text-slate-400"
+                          className="px-2 sm:px-4 py-6 sm:py-8 text-center text-slate-400 text-xs sm:text-sm"
                         >
                           Không có dữ liệu
                         </td>
@@ -1210,19 +1620,20 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
 
               {/* Pagination */}
               {tableData.totalRows > dataPageSize && (
-                <div className="flex items-center justify-between pt-2">
+                <div className="flex items-center justify-between pt-2 gap-2">
                   <Button
                     onClick={() =>
                       fetchTableData(selectedTable.name, dataPage - 1)
                     }
                     disabled={dataPage === 0 || dataLoading}
-                    className="flex items-center gap-2 text-sm cursor-pointer"
+                    className="flex items-center gap-1 text-xs sm:text-sm cursor-pointer px-2 sm:px-4"
                   >
                     <ChevronLeft size={16} />
-                    Trước
+                    <span className="hidden sm:inline">Trước</span>
                   </Button>
-                  <span className="text-sm text-slate-400">
-                    Trang {dataPage + 1} /{" "}
+                  <span className="text-xs sm:text-sm text-slate-400 text-center">
+                    <span className="hidden sm:inline">Trang </span>
+                    {dataPage + 1} /{" "}
                     {Math.ceil(tableData.totalRows / dataPageSize)}
                   </span>
                   <Button
@@ -1234,9 +1645,9 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
                         Math.ceil(tableData.totalRows / dataPageSize) - 1 ||
                       dataLoading
                     }
-                    className="flex items-center gap-2 text-sm cursor-pointer"
+                    className="flex items-center gap-1 text-xs sm:text-sm cursor-pointer px-2 sm:px-4"
                   >
-                    Sau
+                    <span className="hidden sm:inline">Sau</span>
                     <ChevronRight size={16} />
                   </Button>
                 </div>
@@ -1260,6 +1671,7 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
               setIsRowModalOpen(false);
               setEditingRow(null);
               setRowFormData({});
+              setRowFormError("");
             }}
           ></div>
 
@@ -1275,6 +1687,7 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
                   setIsRowModalOpen(false);
                   setEditingRow(null);
                   setRowFormData({});
+                  setRowFormError("");
                 }}
                 className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-slate-800"
               >
@@ -1282,37 +1695,79 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
               </button>
             </div>
 
+            {/* Error Message */}
+            {rowFormError && (
+              <div className="mx-6 mt-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg">
+                <p className="text-sm text-red-400 break-words">
+                  {rowFormError}
+                </p>
+              </div>
+            )}
+
             {/* Content */}
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-3 max-h-96 overflow-y-auto">
-                {tableStructure?.columns?.map((col) => (
-                  <div key={col.Field}>
-                    <label className="block text-xs text-slate-400 mb-1">
-                      {col.Field}
-                      {col.Null === "NO" && (
-                        <span className="text-red-500 ml-1">*</span>
-                      )}
-                    </label>
-                    <Input
-                      type="text"
-                      placeholder={`${col.Type}`}
-                      value={rowFormData[col.Field] || ""}
-                      onChange={(e) =>
-                        setRowFormData({
-                          ...rowFormData,
-                          [col.Field]: e.target.value,
-                        })
-                      }
-                      disabled={
-                        rowActionLoading ||
-                        (rowModalMode === "edit" && col.Key === "PRI")
-                      }
-                    />
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {col.Type} {col.Extra && `(${col.Extra})`}
-                    </p>
-                  </div>
-                ))}
+                {tableStructure?.columns
+                  ?.filter((col) => {
+                    // Hide auto_increment fields in add mode
+                    if (
+                      rowModalMode === "add" &&
+                      col.Extra?.toLowerCase().includes("auto_increment")
+                    ) {
+                      return false;
+                    }
+                    return true;
+                  })
+                  ?.map((col) => {
+                    const isAutoIncrement =
+                      col.Extra?.toLowerCase().includes("auto_increment");
+                    const hasDefaultValue =
+                      col.Default !== null && col.Default !== undefined;
+                    const isRequired =
+                      col.Null === "NO" && !isAutoIncrement && !hasDefaultValue;
+
+                    return (
+                      <div key={col.Field}>
+                        <label className="block text-xs text-slate-400 mb-1">
+                          {col.Field}
+                          {isRequired && (
+                            <span className="text-red-500 ml-1">*</span>
+                          )}
+                          {isAutoIncrement && (
+                            <span className="text-emerald-500 ml-1 text-xs">
+                              (auto)
+                            </span>
+                          )}
+                          {!isAutoIncrement &&
+                            hasDefaultValue &&
+                            rowModalMode === "add" && (
+                              <span className="text-blue-400 ml-1 text-xs">
+                                (default: {col.Default})
+                              </span>
+                            )}
+                        </label>
+                        <Input
+                          type="text"
+                          placeholder={`${col.Type}`}
+                          value={rowFormData[col.Field] || ""}
+                          onChange={(e) =>
+                            setRowFormData({
+                              ...rowFormData,
+                              [col.Field]: e.target.value,
+                            })
+                          }
+                          disabled={
+                            rowActionLoading ||
+                            isAutoIncrement ||
+                            (rowModalMode === "edit" && col.Key === "PRI")
+                          }
+                        />
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {col.Type} {col.Extra && `(${col.Extra})`}
+                        </p>
+                      </div>
+                    );
+                  })}
               </div>
 
               <div className="flex gap-3 pt-4 border-t border-slate-700">
@@ -1332,7 +1787,7 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
                     rowModalMode === "add" ? handleAddRows : handleUpdateRows
                   }
                   disabled={rowActionLoading}
-                  className="flex-1 cursor-pointer"
+                  className="flex-1 cursor-pointer flex items-center justify-center gap-2"
                 >
                   {rowActionLoading ? (
                     <span className="flex items-center justify-center gap-2">
@@ -1341,7 +1796,7 @@ export default function DatabaseTablesTab({ dbId, databaseName }) {
                     </span>
                   ) : (
                     <>
-                      <Save size={16} className="mr-2" />
+                      <Save size={16} />
                       {rowModalMode === "add" ? "Thêm" : "Cập nhật"}
                     </>
                   )}
